@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Application specific storages
+*.db
+*.db.tmp
+*.db.wal
+*.db.shm
+*.log
+~/aktu_data/
+
+# IDE / Personal configurations
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# PyInstaller distribution outputs
+build/
+dist/
+*.spec

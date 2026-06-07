@@ -1,0 +1,16 @@
+# UI & Visualizations
+matplotlib
+
+# Data Export & Manipulation
+openpyxl
+pandas
+fpdf2
+
+# PDF Processing
+pdfplumber
+pypdf
+
+# AI & LLM Integrations
+openai
+langchain-community
+langchain-openai
