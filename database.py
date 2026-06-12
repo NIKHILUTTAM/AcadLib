@@ -53,7 +53,7 @@ def build_database(json_dir, db_path):
         sems = s.get("semesters", [])
         sgpas = [sem["sgpa"] for sem in sems if sem.get("sgpa") is not None]
         cgpa = round(sum(sgpas)/len(sgpas),2) if sgpas else None
-        semesters_completed = len(sgpas)
+        semesters_completed = len(sems) # Ensure we count actual records
         fails = sum(1 for sem in sems for sub in sem.get("subjects",[]) if sub.get("grade") in ('F','E','E#'))
         students_data.append((student_id_counter, s.get("student_name"), s.get("roll_number"), s.get("enrollment_number"), s.get("institute_code"), s.get("institute_name"), s.get("course"), s.get("branch"), s.get("gender"), s.get("father_name"), s.get("source_file"), cgpa, semesters_completed, fails))
         for sem in sems:
@@ -79,7 +79,6 @@ def build_database(json_dir, db_path):
     n = len(students_data)
     conn.close()
     
-    # Safe swap
     if os.path.exists(db_path): os.remove(db_path)
     os.rename(temp_db_path, db_path)
     return n
@@ -87,7 +86,7 @@ def build_database(json_dir, db_path):
 class QueryLibrary:
     def __init__(self, db_path):
         self.db_path = db_path
-        self._lock = threading.RLock() # Thread safety for UI/AI concurrency
+        self._lock = threading.RLock()
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL;")
@@ -101,47 +100,90 @@ class QueryLibrary:
                 for tbl in ("students","semesters","subjects"):
                     cur = self.conn.execute(f"PRAGMA table_info({tbl})")
                     self._schema_cache[tbl] = [r[1] for r in cur.fetchall()]
-        except Exception as e:
-            logger.error(f"Failed to load schema: {e}")
+        except Exception as e: logger.error(f"Failed to load schema: {e}")
 
     def get_schema(self) -> Dict[str, List[str]]: return self._schema_cache
     
     def _run(self, sql, params=()):
         with self._lock:
+            try: return [dict(r) for r in self.conn.execute(sql, params).fetchall()]
+            except Exception as e: logger.error(f"Query error: {sql} | {e}"); raise
+
+    def execute_write(self, sql: str, params=()) -> int:
+        if sql.strip().upper().startswith("SELECT"): raise ValueError("Use _run() for SELECT queries.")
+        with self._lock:
             try:
-                return [dict(r) for r in self.conn.execute(sql, params).fetchall()]
+                cursor = self.conn.cursor()
+                cursor.execute(sql, params)
+                self.conn.commit()
+                return cursor.rowcount
             except Exception as e:
-                logger.error(f"Query error: {sql} | Params: {params} | {e}")
+                logger.error(f"Write query failed: {sql} | {e}")
+                self.conn.rollback()
                 raise
 
-    # ENTERPRISE PAGINATION IMPLEMENTATION
-    def count_students(self, search: str = "") -> int:
-        sql = "SELECT COUNT(*) as n FROM students"
-        params = ()
+    # --- DYNAMIC FILTERS ---
+    def _build_filter_sql(self, search: str, filters: dict):
+        clauses = []; params = []
         if search:
-            sql += " WHERE name LIKE ? OR roll_number LIKE ?"
-            params = (f"%{search}%", f"%{search}%")
-        return self._run(sql, params)[0]["n"]
-
-    def list_students_paginated(self, limit: int, offset: int, search: str = "", sort_col: str = "name", sort_asc: bool = True):
-        # Strict mapping prevents SQL Injection on dynamic ORDER BY
-        safe_cols = {"name": "name", "roll_number": "roll_number", "enrollment_number": "enrollment_number", "gender": "gender", "branch": "branch"}
-        col = safe_cols.get(sort_col, "name")
-        order = "ASC" if sort_asc else "DESC"
-        
-        sql = f"SELECT name,roll_number,enrollment_number,gender,branch FROM students"
-        params = []
-        if search:
-            sql += " WHERE name LIKE ? OR roll_number LIKE ?"
+            clauses.append("(name LIKE ? OR roll_number LIKE ?)")
             params.extend([f"%{search}%", f"%{search}%"])
-            
-        sql += f" ORDER BY {col} {order} LIMIT ? OFFSET ?"
+        if filters:
+            if filters.get("branch"):
+                clauses.append("branch = ?"); params.append(filters["branch"])
+            if filters.get("session"):
+                # Subquery to filter students by session efficiently
+                clauses.append("EXISTS (SELECT 1 FROM semesters sm WHERE sm.student_id = students.id AND sm.session = ?)")
+                params.append(filters["session"])
+            if filters.get("year"):
+                val = filters["year"]
+                if val == "1st Year": clauses.append("semesters_completed IN (1, 2)")
+                elif val == "2nd Year": clauses.append("semesters_completed IN (3, 4)")
+                elif val == "3rd Year": clauses.append("semesters_completed IN (5, 6)")
+                elif val == "4th Year": clauses.append("semesters_completed IN (7, 8)")
+                elif val == "Alumni/Grad": clauses.append("semesters_completed > 8")
+            if filters.get("cgpa"):
+                val = filters["cgpa"]
+                if val == ">= 9.0": clauses.append("cgpa >= 9.0")
+                elif val == ">= 8.0": clauses.append("cgpa >= 8.0")
+                elif val == ">= 7.0": clauses.append("cgpa >= 7.0")
+                elif val == ">= 6.0": clauses.append("cgpa >= 6.0")
+                elif val == "< 6.0": clauses.append("cgpa < 6.0")
+            if filters.get("fails"):
+                val = filters["fails"]
+                if val == "No Fails": clauses.append("failed_subjects = 0")
+                elif val == "Has Fails": clauses.append("failed_subjects > 0")
+        return (" WHERE " + " AND ".join(clauses) if clauses else ""), params
+
+    def count_students(self, search: str = "", filters: dict = None) -> int:
+        where, params = self._build_filter_sql(search, filters)
+        return self._run(f"SELECT COUNT(*) as n FROM students {where}", tuple(params))[0]["n"]
+
+    def list_students_paginated(self, limit: int, offset: int, search: str = "", sort_col: str = "name", sort_asc: bool = True, filters: dict = None):
+        safe_cols = {"name": "name", "roll_number": "roll_number", "enrollment_number": "enrollment_number", "gender": "gender", "branch": "branch", "cgpa": "cgpa"}
+        col = safe_cols.get(sort_col, "name"); order = "ASC" if sort_asc else "DESC"
+        where, params = self._build_filter_sql(search, filters)
+        sql = f"SELECT name,roll_number,enrollment_number,gender,branch,cgpa FROM students {where} ORDER BY {col} {order} LIMIT ? OFFSET ?"
         params.extend([limit, offset])
+        return self._run(sql, tuple(params))
+
+    def get_all_branches(self):
+        rows = self._run("SELECT DISTINCT branch FROM students WHERE branch IS NOT NULL ORDER BY branch")
+        return [r["branch"] for r in rows]
+
+    def get_all_sessions(self):
+        rows = self._run("SELECT DISTINCT session FROM semesters WHERE session IS NOT NULL ORDER BY session DESC")
+        return [r["session"] for r in rows]
+
+    def export_filtered_students(self, search: str = "", sort_col: str = "name", sort_asc: bool = True, filters: dict = None):
+        safe_cols = {"name": "name", "roll_number": "roll_number", "enrollment_number": "enrollment_number", "gender": "gender", "branch": "branch", "cgpa": "cgpa"}
+        col = safe_cols.get(sort_col, "name"); order = "ASC" if sort_asc else "DESC"
+        where, params = self._build_filter_sql(search, filters)
+        sql = f"SELECT RANK() OVER (ORDER BY {col} {order}) as Rank, name as Student_Name, roll_number as Roll_Number, enrollment_number as Enrollment_No, course as Course, branch as Branch, cgpa as CGPA, failed_subjects as Backlogs, semesters_completed as Semesters FROM students {where} ORDER BY {col} {order}"
         return self._run(sql, tuple(params))
 
     def list_all_students(self): return self._run("SELECT name,roll_number,enrollment_number,gender,branch,institute_name FROM students ORDER BY roll_number")
     def list_all_students_full(self): return self._run("SELECT name, roll_number, branch, cgpa, semesters_completed, gender, institute_name, RANK() OVER (ORDER BY cgpa DESC NULLS LAST) AS rank FROM students ORDER BY cgpa DESC NULLS LAST")
-    
     def count_total(self, table: str = "students") -> int:
         try: return int(self.conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"])
         except: return 0
@@ -204,8 +246,7 @@ class AuditLog:
                 self._conn.execute("INSERT INTO audit_log (timestamp,query,route,execution_ms,rows_returned,workspace_used,confidence,status,error) VALUES (?,?,?,?,?,?,?,?,?)", 
                                   (datetime.now().isoformat(), query, report.route, round(report.execution_ms, 1), report.rows_returned, workspace, report.confidence(), "error" if report.error else "ok", report.error[:500]))
                 self._conn.commit()
-            except Exception as e:
-                logger.error(f"Failed to record audit log: {e}")
+            except Exception as e: logger.error(f"Failed to record audit log: {e}")
                 
     def recent(self, limit: int = 20) -> list:
         if not self._conn: return []

@@ -10,8 +10,16 @@ try: import matplotlib; matplotlib.use("TkAgg"); import matplotlib.pyplot as plt
 except ImportError: HAS_MATPLOTLIB = False
 
 def apply_theme(root):
+    # Auto-heal missing config keys (Ensures backward compatibility with older config.py)
+    THEME.setdefault("selected", "#2D333B")
+    THEME.setdefault("ws_bg", THEME["bg"])
+    THEME.setdefault("ws_header", THEME["card_bg"])
+    THEME.setdefault("hover", THEME["border"])
+    THEME.setdefault("sidebar_bg", THEME["bg"])
+
     style=ttk.Style(root); style.theme_use("clam")
     bg=THEME["bg"]; card=THEME["card_bg"]; border=THEME["border"]; text=THEME["text"]
+    
     style.configure(".",background=bg,foreground=text,font=FONT_BODY,borderwidth=0,relief="flat")
     style.configure("TFrame",background=bg)
     style.configure("Card.TFrame",background=card)
@@ -25,20 +33,30 @@ def apply_theme(root):
     style.configure("WSHead.TLabel",background=THEME["ws_header"],foreground=THEME["text_bright"],font=FONT_HEAD)
     style.configure("WSCard.TFrame",background=THEME["ws_bg"])
     style.configure("TButton",background=THEME["hover"],foreground=text,borderwidth=1,relief="flat",padding=(12,6))
-    style.map("TButton",background=[("active",THEME["border"]),("pressed",border)], foreground=[("active",THEME["text_bright"])])
+    style.map("TButton",background=[("active",border),("pressed",border)], foreground=[("active",THEME["text_bright"])])
     style.configure("Accent.TButton",background=THEME["accent2"],foreground="white", font=("Segoe UI",10,"bold"))
     style.map("Accent.TButton",background=[("active","#1A5FC8")])
     style.configure("Green.TButton",background=THEME["accent"],foreground="white", font=("Segoe UI",10,"bold"))
     style.map("Green.TButton",background=[("active","#196B2B")])
-    style.configure("TEntry",fieldbackground=THEME["card_bg"],foreground=text, insertcolor=text,bordercolor=border,lightcolor=border,darkcolor=border)
-    style.configure("TCombobox",fieldbackground=THEME["card_bg"],foreground=text, selectbackground=THEME["selected"],selectforeground=text)
-    style.configure("TProgressbar",troughcolor=THEME["card_bg"],background=THEME["accent2"],bordercolor=border)
-    style.configure("Horizontal.TProgressbar",troughcolor=THEME["card_bg"],background=THEME["accent2"])
-    style.configure("Treeview",background=THEME["bg"],foreground=text,fieldbackground=THEME["bg"], bordercolor=border,rowheight=26)
-    style.configure("Treeview.Heading",background=THEME["card_bg"],foreground=THEME["text_bright"], font=FONT_HEAD,relief="flat")
+    style.configure("TEntry",fieldbackground=card,foreground=text, insertcolor=text,bordercolor=border,lightcolor=border,darkcolor=border)
+    
+    # --- CRITICAL FIX FOR DROPDOWN FILTERS ---
+    style.configure("TCombobox", fieldbackground=card, background=card, foreground=text, arrowcolor=text, bordercolor=border)
+    style.map("TCombobox", fieldbackground=[("readonly", card)], selectbackground=[("readonly", THEME["accent2"])], selectforeground=[("readonly", "white")])
+    root.option_add('*TCombobox*Listbox.background', card)
+    root.option_add('*TCombobox*Listbox.foreground', text)
+    root.option_add('*TCombobox*Listbox.selectBackground', THEME["accent2"])
+    root.option_add('*TCombobox*Listbox.selectForeground', "white")
+    root.option_add('*TCombobox*Listbox.font', FONT_BODY)
+    # -----------------------------------------
+
+    style.configure("TProgressbar",troughcolor=card,background=THEME["accent2"],bordercolor=border)
+    style.configure("Horizontal.TProgressbar",troughcolor=card,background=THEME["accent2"])
+    style.configure("Treeview",background=bg,foreground=text,fieldbackground=bg, bordercolor=border,rowheight=26)
+    style.configure("Treeview.Heading",background=card,foreground=THEME["text_bright"], font=FONT_HEAD,relief="flat")
     style.map("Treeview",background=[("selected",THEME["selected"])], foreground=[("selected",THEME["text_bright"])])
     style.configure("TNotebook",background=bg,tabmargins=[2,5,2,0])
-    style.configure("TNotebook.Tab",background=THEME["card_bg"],foreground=THEME["text_dim"], padding=[12,6])
+    style.configure("TNotebook.Tab",background=card,foreground=THEME["text_dim"], padding=[12,6])
     style.map("TNotebook.Tab",background=[("selected",THEME["selected"])], foreground=[("selected",THEME["text_bright"])])
     style.configure("TRadiobutton",background=bg,foreground=text)
     style.configure("TCheckbutton",background=bg,foreground=text)
@@ -363,13 +381,13 @@ class DashboardPanel(ttk.Frame):
         if self.state.db_ready and self.state.qlib:
             try:
                 st=self.state.qlib.db_stats()
-                self._stat_card(self.stats_row,"Students",st["students"],"👥",THEME["accent2"]); self._stat_card(self.stats_row,"Semesters",st["semesters"],"📅",THEME["accent3"]); self._stat_card(self.stats_row,"Subjects",st["subjects"],"📚",THEME["accent"])
+                self._stat_card(self.stats_row,"Students",st["students"],"👥",THEME["accent2"]); self._stat_card(self.stats_row,"Semester Records",st["semesters"],"📅",THEME["accent3"]); self._stat_card(self.stats_row,"Subject Records",st["subjects"],"📚",THEME["accent"])
                 json_count=len([f for f in glob.glob(os.path.join(self.state.json_dir,"*.json")) if not os.path.basename(f).startswith("_")])
                 self._stat_card(self.stats_row,"JSON Files",json_count,"📄",THEME["warning"])
                 self._log(f"✅ Database ready: {st['students']} students, {st['semesters']} semesters, {st['subjects']} subjects")
             except Exception as e: self._log(f"⚠️  DB read error: {e}")
         else:
-            for title,val,icon,color in [("Students","—","👥",THEME["text_dim"]),("Semesters","—","📅",THEME["text_dim"]),("Subjects","—","📚",THEME["text_dim"]),("JSON Files","—","📄",THEME["text_dim"])]: self._stat_card(self.stats_row,title,val,icon,color)
+            for title,val,icon,color in [("Students","—","👥",THEME["text_dim"]),("Semester Records","—","📅",THEME["text_dim"]),("Subject Records","—","📚",THEME["text_dim"]),("JSON Files","—","📄",THEME["text_dim"])]: self._stat_card(self.stats_row,title,val,icon,color)
             self._log("⚠️  Database not built yet. Go to Database → Rebuild.")
         self._log(f"📁 JSON dir : {self.state.json_dir}"); self._log(f"🗄️  DB path  : {self.state.db_path}")
         agent_status="✅ Enabled" if self.state.agent else ("🔑 Key set" if self.state.openai_key else "❌ No API key"); self._log(f"🤖 AI Agent : {agent_status}")
@@ -504,6 +522,7 @@ class DatabasePanel(ttk.Frame):
             except: self.status_lbl.configure(text="⚠️ DB exists but unreadable",foreground=THEME["warning"])
         else: self.status_lbl.configure(text="❌ Not built",foreground=THEME["error"])
 
+# --- ENTERPRISE STUDENTS PANEL WITH DYNAMIC FILTERS ---
 class StudentsPanel(ttk.Frame):
     PAGE_SIZE = 100
     def __init__(self,parent,state:AppState): 
@@ -518,12 +537,57 @@ class StudentsPanel(ttk.Frame):
         self.list_view = ttk.Frame(self.main_container, style="TFrame")
         self.list_view.pack(fill="both", expand=True)
 
-        ttk.Label(self.list_view,text="Students",style="Title.TLabel").pack(anchor="w",padx=32,pady=(28,4))
-        bar=ttk.Frame(self.list_view,style="TFrame"); bar.pack(fill="x",padx=32,pady=(0,12)); ttk.Label(bar,text="Search:").pack(side="left",padx=(0,8))
-        self._search_var=tk.StringVar(); e=ttk.Entry(bar,textvariable=self._search_var,width=36); e.pack(side="left",padx=(0,8)); e.bind("<Return>",lambda _:self._search())
-        ttk.Button(bar,text="Search",command=self._search,style="Accent.TButton").pack(side="left",padx=(0,8)); ttk.Button(bar,text="Show All",command=self._load_all,style="TButton").pack(side="left"); self._count_lbl=ttk.Label(bar,text="",style="Dim.TLabel"); self._count_lbl.pack(side="right")
+        ttk.Label(self.list_view,text="Students Directory",style="Title.TLabel").pack(anchor="w",padx=32,pady=(28,4))
         
-        tbl_frame=make_card(self.list_view); tbl_frame.pack(fill="both",expand=True,padx=32,pady=(0,8))
+        # --- Search & Export Bar ---
+        bar = ttk.Frame(self.list_view,style="TFrame"); bar.pack(fill="x",padx=32,pady=(0,8))
+        ttk.Label(bar,text="Search:").pack(side="left",padx=(0,8))
+        self._search_var = tk.StringVar(); e=ttk.Entry(bar,textvariable=self._search_var,width=36); e.pack(side="left",padx=(0,8)); e.bind("<Return>",lambda _:self._search())
+        ttk.Button(bar,text="Search",command=self._search,style="Accent.TButton").pack(side="left",padx=(0,8))
+        
+        ttk.Button(bar, text="⬇ CSV", command=lambda: self._export("csv"), style="TButton").pack(side="right")
+        ttk.Button(bar, text="📊 Excel", command=lambda: self._export("xlsx"), style="Green.TButton").pack(side="right", padx=(8,8))
+        self._count_lbl=ttk.Label(bar,text="",style="Dim.TLabel"); self._count_lbl.pack(side="right", padx=16)
+        
+        # --- Advanced Filter Bar ---
+        f_bar = ttk.Frame(self.list_view, style="TFrame")
+        f_bar.pack(fill="x", padx=32, pady=(0, 12))
+
+        ttk.Label(f_bar, text="Branch:", style="Dim.TLabel").pack(side="left")
+        self._branch_var = tk.StringVar(value="All")
+        self._branch_cb = ttk.Combobox(f_bar, textvariable=self._branch_var, state="readonly", width=32)
+        self._branch_cb.pack(side="left", padx=(4,12))
+        self._branch_cb.bind("<<ComboboxSelected>>", lambda _: self._search())
+        
+        # Added Session Filter
+        ttk.Label(f_bar, text="Session:", style="Dim.TLabel").pack(side="left")
+        self._session_var = tk.StringVar(value="All")
+        self._session_cb = ttk.Combobox(f_bar, textvariable=self._session_var, state="readonly", width=10)
+        self._session_cb.pack(side="left", padx=(4,12))
+        self._session_cb.bind("<<ComboboxSelected>>", lambda _: self._search())
+
+        ttk.Label(f_bar, text="Year:", style="Dim.TLabel").pack(side="left")
+        self._year_var = tk.StringVar(value="All")
+        self._year_cb = ttk.Combobox(f_bar, textvariable=self._year_var, values=["All", "1st Year", "2nd Year", "3rd Year", "4th Year", "Alumni/Grad"], state="readonly", width=10)
+        self._year_cb.pack(side="left", padx=(4,12))
+        self._year_cb.bind("<<ComboboxSelected>>", lambda _: self._search())
+
+        ttk.Label(f_bar, text="CGPA:", style="Dim.TLabel").pack(side="left")
+        self._cgpa_var = tk.StringVar(value="All")
+        self._cgpa_cb = ttk.Combobox(f_bar, textvariable=self._cgpa_var, values=["All", ">= 9.0", ">= 8.0", ">= 7.0", ">= 6.0", "< 6.0"], state="readonly", width=8)
+        self._cgpa_cb.pack(side="left", padx=(4,12))
+        self._cgpa_cb.bind("<<ComboboxSelected>>", lambda _: self._search())
+
+        ttk.Label(f_bar, text="Backlogs:", style="Dim.TLabel").pack(side="left")
+        self._fails_var = tk.StringVar(value="All")
+        self._fails_cb = ttk.Combobox(f_bar, textvariable=self._fails_var, values=["All", "No Fails", "Has Fails"], state="readonly", width=10)
+        self._fails_cb.pack(side="left", padx=(4,12))
+        self._fails_cb.bind("<<ComboboxSelected>>", lambda _: self._search())
+
+        ttk.Button(f_bar, text="⟳ Reset Filters", command=self._reset_filters, style="TButton").pack(side="left")
+
+        # --- Table View ---
+        tbl_frame = make_card(self.list_view); tbl_frame.pack(fill="both",expand=True,padx=32,pady=(0,8))
         tbl_frame.grid_columnconfigure(0, weight=1); tbl_frame.grid_rowconfigure(1, weight=1)
         
         page_bar = ttk.Frame(tbl_frame, style="Card.TFrame")
@@ -535,10 +599,10 @@ class StudentsPanel(ttk.Frame):
         tree_container = ttk.Frame(tbl_frame, style="TFrame")
         tree_container.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0,10))
 
-        cols=("Name","Roll Number","Enrollment","Gender","Branch"); self.tree=ttk.Treeview(tree_container,columns=cols,show="headings",height=16)
-        
-        col_map={"Name":"name","Roll Number":"roll_number","Enrollment":"enrollment_number","Gender":"gender","Branch":"branch"}
-        for col,w in zip(cols,(240,160,180,80,220)): 
+        cols=("Name","Roll Number","Enrollment","Gender","Branch", "CGPA")
+        self.tree=ttk.Treeview(tree_container,columns=cols,show="headings",height=16)
+        col_map={"Name":"name","Roll Number":"roll_number","Enrollment":"enrollment_number","Gender":"gender","Branch":"branch", "CGPA":"cgpa"}
+        for col,w in zip(cols,(200, 120, 120, 80, 220, 80)): 
             self.tree.heading(col,text=col,command=lambda c=col_map[col]:self._sort(c))
             self.tree.column(col,width=w,minwidth=60)
             
@@ -582,7 +646,7 @@ class StudentsPanel(ttk.Frame):
 
         hdr = ttk.Frame(self.profile_view, style="TFrame")
         hdr.pack(fill="x", padx=32, pady=(28,4))
-        ttk.Button(hdr, text="◀ Back to Students", command=self._show_list, style="Accent.TButton").pack(side="left", padx=(0,16))
+        ttk.Button(hdr, text="◀ Back to Directory", command=self._show_list, style="Accent.TButton").pack(side="left", padx=(0,16))
         ttk.Label(hdr, text=f"Profile: {name}", style="Title.TLabel").pack(side="left")
 
         if not self.state.qlib: return
@@ -614,11 +678,35 @@ class StudentsPanel(ttk.Frame):
                 if grade is None or str(grade).lower()=="none": grade="—"
                 tree_s.insert("","end", values=(sub.get("subject_code"), sub.get("subject_name"), sub.get("subject_type"), self._fmt(sub.get("internal_marks")), self._fmt(sub.get("external_marks")), self._fmt(sub.get("total_marks")), grade), tags=("fail" if grade in ("F","E","E#") else ""))
 
+    def _reset_filters(self):
+        self._search_var.set("")
+        self._branch_var.set("All")
+        self._session_var.set("All")
+        self._year_var.set("All")
+        self._cgpa_var.set("All")
+        self._fails_var.set("All")
+        self._search()
+
     def _load_all(self):
         if not self.state.db_ready: return
-        self._search_var.set("")
-        self._page = 0
-        self._fetch_page()
+        try:
+            branches = self.state.qlib.get_all_branches()
+            self._branch_cb["values"] = ["All"] + branches
+            
+            # Fetch dynamic sessions
+            sessions = self.state.qlib.get_all_sessions()
+            self._session_cb["values"] = ["All"] + sessions
+        except: pass
+        self._reset_filters()
+
+    def _get_active_filters(self):
+        return {
+            "branch": self._branch_var.get() if self._branch_var.get() != "All" else None,
+            "session": self._session_var.get() if self._session_var.get() != "All" else None,
+            "year": self._year_var.get() if self._year_var.get() != "All" else None,
+            "cgpa": self._cgpa_var.get() if self._cgpa_var.get() != "All" else None,
+            "fails": self._fails_var.get() if self._fails_var.get() != "All" else None
+        }
 
     def _search(self):
         if not self.state.db_ready: return
@@ -628,9 +716,10 @@ class StudentsPanel(ttk.Frame):
     def _fetch_page(self):
         q = self._search_var.get().strip()
         offset = self._page * self.PAGE_SIZE
+        f = self._get_active_filters()
         
-        self._total_records = self.state.qlib.count_students(search=q)
-        self._rows = self.state.qlib.list_students_paginated(limit=self.PAGE_SIZE, offset=offset, search=q, sort_col=self._sort_col, sort_asc=self._sort_asc)
+        self._total_records = self.state.qlib.count_students(search=q, filters=f)
+        self._rows = self.state.qlib.list_students_paginated(limit=self.PAGE_SIZE, offset=offset, search=q, sort_col=self._sort_col, sort_asc=self._sort_asc, filters=f)
         
         self._render_tree()
 
@@ -644,10 +733,10 @@ class StudentsPanel(ttk.Frame):
         end = min(start + self.PAGE_SIZE - 1, self._total_records)
         
         for i,r in enumerate(self._rows): 
-            self.tree.insert("","end",values=(r.get("name"),r.get("roll_number"),r.get("enrollment_number"),r.get("gender"),r.get("branch")),tags=("odd" if i%2==0 else "even",))
+            self.tree.insert("","end",values=(r.get("name"),r.get("roll_number"),r.get("enrollment_number"),r.get("gender"),r.get("branch"),self._fmt(r.get("cgpa"))),tags=("odd" if i%2==0 else "even",))
         
         self.page_lbl.configure(text=f"Rows {start}–{end} of {self._total_records}  (Page {self._page+1}/{n_pages})")
-        self._count_lbl.configure(text=f"Total: {self._total_records} student(s)")
+        self._count_lbl.configure(text=f"Total: {self._total_records} matching student(s)")
         
         self.btn_prev.state(["disabled"] if self._page <= 0 else ["!disabled"])
         self.btn_next.state(["disabled"] if self._page >= n_pages - 1 else ["!disabled"])
@@ -662,6 +751,28 @@ class StudentsPanel(ttk.Frame):
         self._sort_col=col_key
         self._page = 0
         self._fetch_page()
+
+    def _export(self, fmt):
+        if not self.state.db_ready: messagebox.showwarning("DB","Database not ready"); return
+        q = self._search_var.get().strip()
+        f = self._get_active_filters()
+        rows = self.state.qlib.export_filtered_students(search=q, sort_col=self._sort_col, sort_asc=self._sort_asc, filters=f)
+
+        if not rows:
+            messagebox.showwarning("No Data", "No records found matching these filters.")
+            return
+
+        os.makedirs(self.state.export_dir, exist_ok=True)
+        ext = "csv" if fmt == "csv" else "xlsx"
+        path = filedialog.asksaveasfilename(defaultextension=f".{ext}", filetypes=[(f"{ext.upper()}", f"*.{ext}")], initialdir=self.state.export_dir, initialfile=f"Filtered_Student_Directory.{ext}")
+        if not path: return
+
+        try:
+            if fmt == "csv": DataExporter.to_csv(rows, path)
+            else: DataExporter.to_excel_simple(rows, path)
+            messagebox.showinfo("Exported", f"Successfully exported {len(rows)} records to:\n{path}")
+        except Exception as e:
+            messagebox.showerror("Export Error", str(e))
 
 class AnalyticsPanel(ttk.Frame):
     PAGE_SIZE = 100
@@ -856,7 +967,6 @@ class SQLAgentPanel(ttk.Frame):
             messagebox.showinfo("Exported",f"Saved → {path}")
         except Exception as e: messagebox.showerror("Export Error",str(e))
 
-
 class ChatbotPanel(ttk.Frame):
     def __init__(self, parent, state: AppState):
         super().__init__(parent); self.state = state; self._is_processing = False; self._orch = None; self._build()
@@ -914,28 +1024,28 @@ class ChatbotPanel(ttk.Frame):
         
         self._chat("system", "How can I help you today?")
 
-    # --- CHAT RENDERING ENGINE WITH STREAMING SUPPORT ---
     def _chat(self, tag, msg):
         if tag in ("bot", "success") and "\n" in msg:
             lines = msg.split("\n")
             self._animate_lines(lines, tag, 0)
+        elif tag in ("bot", "success"):
+            self.chat_display.configure(state="normal")
+            self.chat_display.insert(tk.END, f"{msg.strip()}\n", tag)
+            self.chat_display.see(tk.END)
+            self.chat_display.configure(state="disabled")
         else:
             self.chat_display.configure(state="normal")
             self.chat_display.insert(tk.END, f"{msg.strip()}\n", tag)
             self.chat_display.see(tk.END)
             self.chat_display.configure(state="disabled")
 
-    # Non-blocking sequential line animator loop
     def _animate_lines(self, lines, tag, index):
         if index < len(lines):
             self.chat_display.configure(state="normal")
             line = lines[index]
-            # Strip extra spaces but preserve deliberate structures like tab lists
             self.chat_display.insert(tk.END, f"{line}\n", tag)
             self.chat_display.see(tk.END)
             self.chat_display.configure(state="disabled")
-            
-            # 45ms pause between lines simulates typical high-speed LLM token streaming
             self.after(45, lambda: self._animate_lines(lines, tag, index + 1))
 
     def _send(self):
